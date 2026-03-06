@@ -1,7 +1,16 @@
 ---
 name: yt-search-download
 description: |
-  YouTube 视频搜索与下载工具。结合 YouTube Data API v3 进行高级搜索，yt-dlp 下载。支持全站搜索、频道浏览、按时间/播放量/相关度排序、下载视频、提取音频。当用户想搜索 YouTube、浏览频道视频、下载 YouTube 视频、提取音频时使用此 skill。触发词："搜索YouTube"、"YouTube搜索"、"找YouTube视频"、"下载YouTube"、"浏览频道"、"搜索[频道名]最新视频"、"下载这个视频"、"提取音频"。
+  YouTube 视频搜索、下载视频、下载字幕工具。结合 YouTube Data API v3 进行高级搜索，yt-dlp 下载视频/音频/字幕。
+  核心能力：全站关键词搜索、频道浏览、按时间/播放量/相关度排序、下载视频、提取音频（MP3）、下载字幕（中英文）、查看视频详情。
+  触发场景（任何涉及 YouTube 的操作都应使用此 skill）：
+  - 搜索类："搜索YouTube"、"YouTube搜索"、"找YouTube视频"、"搜索[频道名]最新视频"、"查找[人名]的YouTube"、"[人名]最近更新的YouTube"、"YouTube上有什么关于XXX的"
+  - 频道浏览类："浏览频道"、"看看[频道名]最新视频"、"[人名]最近发了什么视频"、"[人名]YouTube更新"、"查看[频道名]的视频列表"
+  - 下载视频类："下载YouTube"、"下载这个视频"、"下载YouTube视频"、"把这个视频下载下来"、"保存视频"
+  - 下载音频类："提取音频"、"下载音频"、"YouTube转MP3"、"只要音频"
+  - 下载字幕类："下载字幕"、"提取字幕"、"获取字幕"、"下载YouTube字幕"、"中文字幕"、"英文字幕"、"提取文字"、"视频转文字"、"获取视频文本"
+  - 视频信息类："视频详情"、"视频信息"、"这个视频多长"
+  关键词匹配：只要用户消息中出现 "YouTube"、"油管"、"YT"、"yt" 加上搜索/下载/字幕/频道/视频等动作词，就应触发此 skill。
 ---
 
 # YouTube 搜索 & 下载
@@ -92,6 +101,15 @@ python3 scripts/yt_search.py info "VIDEO_URL"
 2    Let's build GPT: from scratch, in code, spelled out   Andrej Karpathy      2023-01-17   1h56m27s   2.1M
 ```
 
+**多语言处理规范**：搜索或浏览频道后，如果视频标题为英文或其他非中文语言，**必须同时给出中文翻译**，格式如下：
+```
+1  Rick Beato: Greatest Guitarists of All Time
+   【译】里克·贝阿托：史上最伟大的吉他手、音乐史与创作秘密  2026-03-01  2h34m  301.9K
+2  State of AI in 2026: LLMs, Coding, Scaling Laws
+   【译】2026年AI现状：大模型、编程、Scaling法则与中国AI  2026-01-31  4h25m  741.7K
+```
+不需要询问用户，直接翻译输出。
+
 ## 典型工作流
 
 **找某频道最新视频并下载：**
@@ -106,14 +124,64 @@ python3 scripts/yt_search.py info "VIDEO_URL"
 1. `search "播客名" -o date -n 5`
 2. `download "URL" --audio-only`
 
+### 下载字幕（默认同时输出 SRT + TXT）
+
+**标准流程**：下载字幕转为 SRT，同时生成保留时间戳的 TXT（供 AI 总结用，时间戳有助于定位内容）。
+
+```bash
+# Step 1：下载字幕并转为 SRT（英文优先，无则用自动字幕）
+yt-dlp --cookies-from-browser chrome \
+  --write-auto-sub --write-sub \
+  --sub-lang en,zh-Hans \
+  --convert-subs srt \
+  --skip-download \
+  -o "~/Downloads/%(title)s.%(ext)s" \
+  "VIDEO_URL"
+# 输出：~/Downloads/视频标题.en.srt 或 .zh-Hans.srt
+
+# Step 2：从 SRT 生成 TXT（保留时间戳，仅去除序号和空行，供 AI 总结使用）
+python3 -c "
+import re, sys
+srt = open(sys.argv[1]).read()
+# 去除序号行（纯数字行），保留时间戳和字幕文本
+txt = re.sub(r'^\d+\s*\n', '', srt, flags=re.MULTILINE)
+txt = re.sub(r'\n{3,}', '\n\n', txt).strip()
+txt_path = sys.argv[1].replace('.srt', '.txt')
+open(txt_path, 'w').write(txt)
+print(f'已保存：{txt_path}')
+" ~/Downloads/视频标题.en.srt
+# 输出：~/Downloads/视频标题.en.txt（格式：时间戳 + 字幕文本）
+```
+
+TXT 格式示例（保留时间戳，便于 AI 总结时引用具体时间点）：
+```
+00:00:01,000 --> 00:00:04,000
+Welcome to the Lex Fridman podcast.
+
+00:00:05,000 --> 00:00:09,000
+Today we're talking about the greatest guitarists of all time.
+```
+
+**其他场景**：
+```bash
+# 仅中文字幕（SRT + TXT）
+yt-dlp --cookies-from-browser chrome --write-auto-sub --write-sub \
+  --sub-lang zh-Hans --convert-subs srt --skip-download \
+  -o "~/Downloads/%(title)s.%(ext)s" "VIDEO_URL"
+
+# 字幕 + 视频一起下载
+yt-dlp --cookies-from-browser chrome --write-auto-sub --write-sub \
+  --sub-lang en --convert-subs srt \
+  -o "~/Downloads/%(title)s.%(ext)s" "VIDEO_URL"
+```
+
+> **规范**：下载字幕时**始终加 `--convert-subs srt`**，下载完成后**始终执行 Step 2 生成 TXT**，让用户同时拿到 `.srt`（带时间轴）和 `.txt`（纯文本）两个文件。
+
 ## 高级用法（直接用 yt-dlp）
 
 ```bash
 # 列出可用格式
 yt-dlp --cookies-from-browser chrome -F "VIDEO_URL"
-
-# 下载字幕
-yt-dlp --cookies-from-browser chrome --write-auto-sub --write-sub --sub-lang zh-Hans,en --skip-download "VIDEO_URL"
 
 # 下载整个播放列表
 yt-dlp --cookies-from-browser chrome -o "~/Downloads/%(playlist_title)s/%(title)s.%(ext)s" "PLAYLIST_URL"

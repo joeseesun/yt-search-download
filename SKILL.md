@@ -48,7 +48,12 @@ python3 scripts/yt_search.py search "关键词" -n 20
 |------|------|
 | `-n 20` | 最多返回条数（默认 20） |
 | `-o date` | 按时间排序（默认 relevance） |
-| `-o viewCount` | 按播放量排序 |
+| `-o viewCount` | 按播放量排序（API 级，准确） |
+| `--sort-by views` | 本地二次排序（按播放量降序） |
+| `--sort-by duration-asc` | 本地排序：时长从短到长 |
+| `--sort-by duration-desc` | 本地排序：时长从长到短 |
+| `--min-duration 30m` | 过滤：最短时长（支持 `30m`、`1h`、`1h30m`、纯数字=分钟） |
+| `--max-duration 1h` | 过滤：最长时长 |
 | `--after 2024-01-01` | 发布时间起 |
 | `--before 2024-12-31` | 发布时间止 |
 | `-c @handle` | 限定频道 |
@@ -66,6 +71,12 @@ python3 scripts/yt_search.py channel @channelHandle -q "关键词"
 
 # 频道内按播放量排序
 python3 scripts/yt_search.py channel @channelHandle -o viewCount
+
+# 只看长视频（超过 1 小时）
+python3 scripts/yt_search.py channel @channelHandle --min-duration 1h
+
+# 只看短视频（30 分钟内），按时长升序
+python3 scripts/yt_search.py channel @channelHandle --max-duration 30m --sort-by duration-asc
 ```
 
 频道格式支持：`@handle`、`https://youtube.com/@handle`、频道 ID（`UCxxxx`）
@@ -101,14 +112,25 @@ python3 scripts/yt_search.py info "VIDEO_URL"
 2    Let's build GPT: from scratch, in code, spelled out   Andrej Karpathy      2023-01-17   1h56m27s   2.1M
 ```
 
-**多语言处理规范**：搜索或浏览频道后，如果视频标题为英文或其他非中文语言，**必须同时给出中文翻译**，格式如下：
+**🔴 强制双语显示规范**（必须执行，不得省略原标题）：
+
+脚本输出的原始标题行含 `【译】___` 占位符，AI **必须替换为实际翻译**，同时**保留原标题**。
+
+最终呈现给用户的格式：
 ```
-1  Rick Beato: Greatest Guitarists of All Time
-   【译】里克·贝阿托：史上最伟大的吉他手、音乐史与创作秘密  2026-03-01  2h34m  301.9K
-2  State of AI in 2026: LLMs, Coding, Scaling Laws
-   【译】2026年AI现状：大模型、编程、Scaling法则与中国AI  2026-01-31  4h25m  741.7K
+1  Rick Beato: Greatest Guitarists of All Time           ← 原标题（必须保留）
+   【译】里克·贝阿托：史上最伟大的吉他手  Lex Fridman  2026-03-01  2h34m  301.9K
+   https://youtube.com/watch?v=xxx
+
+2  State of AI in 2026: LLMs, Coding, Scaling Laws      ← 原标题（必须保留）
+   【译】2026年AI现状：大模型、编程、Scaling法则  Lex Fridman  2026-01-31  4h25m  741.7K
+   https://youtube.com/watch?v=yyy
 ```
-不需要询问用户，直接翻译输出。
+
+**禁止行为**：
+- ❌ 只显示中文翻译，丢掉英文原标题
+- ❌ 询问用户是否需要翻译（直接翻译）
+- ❌ 跳过某些视频不翻译
 
 ## 典型工作流
 

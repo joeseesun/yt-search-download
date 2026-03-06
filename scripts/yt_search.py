@@ -43,12 +43,15 @@ def api_get(endpoint: str, params: dict) -> dict:
         sys.exit(1)
 
 
-def parse_duration(iso: str) -> str:
-    """Convert ISO 8601 duration (e.g. PT3H55M16S) to readable string."""
+def parse_duration(iso: str) -> tuple:
+    """Convert ISO 8601 duration (e.g. PT3H55M16S) to (readable string, total seconds)."""
     m = re.match(r"PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?", iso or "")
     if not m:
-        return "?"
-    h, mi, s = m.group(1), m.group(2), m.group(3)
+        return "?", 0
+    h = int(m.group(1) or 0)
+    mi = int(m.group(2) or 0)
+    s = int(m.group(3) or 0)
+    total_secs = h * 3600 + mi * 60 + s
     parts = []
     if h:
         parts.append(f"{h}h")
@@ -56,7 +59,19 @@ def parse_duration(iso: str) -> str:
         parts.append(f"{mi}m")
     if s:
         parts.append(f"{s}s")
-    return "".join(parts) or "0s"
+    return "".join(parts) or "0s", total_secs
+
+
+def parse_duration_input(s: str) -> int:
+    """Parse user duration input to seconds. Supports: 30m, 1h, 1h30m, 90 (= 90 min)."""
+    s = s.strip().lower()
+    m = re.match(r"^(?:(\d+)h)?(?:(\d+)m)?$", s)
+    if m and (m.group(1) or m.group(2)):
+        return int(m.group(1) or 0) * 3600 + int(m.group(2) or 0) * 60
+    try:
+        return int(s) * 60  # bare number = minutes
+    except ValueError:
+        return 0
 
 
 def fmt_views(n: int) -> str:
@@ -140,13 +155,15 @@ def search_videos(
         stats = item.get("statistics", {})
         cd = item.get("contentDetails", {})
         pub = snip.get("publishedAt", "")[:10]
+        dur_str, dur_secs = parse_duration(cd.get("duration", ""))
         results.append({
             "id": item["id"],
             "title": snip.get("title", ""),
             "channel": snip.get("channelTitle", ""),
             "published": pub,
             "views": int(stats.get("viewCount", 0)),
-            "duration": parse_duration(cd.get("duration", "")),
+            "duration": dur_str,
+            "duration_seconds": dur_secs,
             "url": f"https://www.youtube.com/watch?v={item['id']}",
             "description": snip.get("description", "")[:200],
         })
@@ -173,19 +190,34 @@ def search_channel_videos(
 
 
 def print_results(results: list, show_desc: bool = False):
-    """Pretty print search results as a formatted table."""
+    """Pretty print search results in bilingual format (original + translation hint)."""
     if not results:
         print("未找到结果")
         return
-    print(f"\n{'#':<4} {'标题':<55} {'频道':<20} {'日期':<12} {'时长':<10} {'播放量'}")
-    print("-" * 120)
-    for i, v in enumerate(results, 1):
-        title = v["title"][:53] + ".." if len(v["title"]) > 53 else v["title"]
-        channel = v["channel"][:18] + ".." if len(v["channel"]) > 18 else v["channel"]
-        print(f"{i:<4} {title:<55} {channel:<20} {v['published']:<12} {v['duration']:<10} {fmt_views(v['views'])}")
-        if show_desc and v["description"]:
-            print(f"     {v['description'][:100]}")
     print()
+    for i, v in enumerate(results, 1):
+        meta = f"{v['published']}  {v['duration']}  {fmt_views(v['views'])}"
+        print(f"{i}  {v['title']}")
+        print(f"   【译】___  {v['channel']}  {meta}")
+        print(f"   {v['url']}")
+        if show_desc and v["description"]:
+            print(f"   {v['description'][:120]}")
+        print()
+
+
+def apply_duration_filter_sort(results: list, min_secs: int = 0, max_secs: int = 0, sort_by: str = "") -> list:
+    """Filter by duration and/or sort client-side."""
+    if min_secs:
+        results = [r for r in results if r["duration_seconds"] >= min_secs]
+    if max_secs:
+        results = [r for r in results if r["duration_seconds"] <= max_secs]
+    if sort_by == "duration-asc":
+        results = sorted(results, key=lambda r: r["duration_seconds"])
+    elif sort_by == "duration-desc":
+        results = sorted(results, key=lambda r: r["duration_seconds"], reverse=True)
+    elif sort_by == "views":
+        results = sorted(results, key=lambda r: r["views"], reverse=True)
+    return results
 
 
 def download_video(url: str, output_dir: str = None, quality: str = "best", audio_only: bool = False) -> bool:
@@ -249,7 +281,12 @@ def main():
     ps.add_argument("query", help="搜索关键词")
     ps.add_argument("-c", "--channel", help="限定频道 (handle/@name/URL/ID)")
     ps.add_argument("-n", "--max", type=int, default=20, help="最多返回条数 (默认20)")
-    ps.add_argument("-o", "--order", choices=["relevance", "date", "viewCount", "rating"], default="relevance")
+    ps.add_argument("-o", "--order", choices=["relevance", "date", "viewCount", "rating"], default="relevance",
+                    help="API 排序: relevance|date|viewCount|rating")
+    ps.add_argument("--sort-by", choices=["views", "duration-asc", "duration-desc"],
+                    help="本地二次排序: views|duration-asc|duration-desc")
+    ps.add_argument("--min-duration", metavar="DUR", help="最短时长 (如 30m, 1h, 1h30m, 或纯数字=分钟)")
+    ps.add_argument("--max-duration", metavar="DUR", help="最长时长 (如 30m, 1h, 1h30m, 或纯数字=分钟)")
     ps.add_argument("--after", help="发布时间起 (YYYY-MM-DD)")
     ps.add_argument("--before", help="发布时间止 (YYYY-MM-DD)")
     ps.add_argument("-d", "--desc", action="store_true", help="显示简介")
@@ -260,7 +297,12 @@ def main():
     pc.add_argument("channel", help="频道 (handle/@name/URL/ID)")
     pc.add_argument("-q", "--query", default="", help="在频道内搜索")
     pc.add_argument("-n", "--max", type=int, default=20, help="最多返回条数 (默认20)")
-    pc.add_argument("-o", "--order", choices=["date", "relevance", "viewCount"], default="date")
+    pc.add_argument("-o", "--order", choices=["date", "relevance", "viewCount"], default="date",
+                    help="API 排序: date|relevance|viewCount")
+    pc.add_argument("--sort-by", choices=["views", "duration-asc", "duration-desc"],
+                    help="本地二次排序: views|duration-asc|duration-desc")
+    pc.add_argument("--min-duration", metavar="DUR", help="最短时长 (如 30m, 1h, 1h30m, 或纯数字=分钟)")
+    pc.add_argument("--max-duration", metavar="DUR", help="最长时长 (如 30m, 1h, 1h30m, 或纯数字=分钟)")
     pc.add_argument("-d", "--desc", action="store_true", help="显示简介")
     pc.add_argument("--json", action="store_true", help="输出 JSON 格式")
 
@@ -298,6 +340,9 @@ def main():
             published_after=after,
             published_before=before,
         )
+        min_secs = parse_duration_input(args.min_duration) if args.min_duration else 0
+        max_secs = parse_duration_input(args.max_duration) if args.max_duration else 0
+        results = apply_duration_filter_sort(results, min_secs, max_secs, args.sort_by or "")
         if args.json:
             print(json.dumps(results, ensure_ascii=False, indent=2))
         else:
@@ -310,6 +355,9 @@ def main():
             max_results=args.max,
             order=args.order,
         )
+        min_secs = parse_duration_input(args.min_duration) if args.min_duration else 0
+        max_secs = parse_duration_input(args.max_duration) if args.max_duration else 0
+        results = apply_duration_filter_sort(results, min_secs, max_secs, args.sort_by or "")
         if hasattr(args, 'json') and args.json:
             print(json.dumps(results, ensure_ascii=False, indent=2))
         else:

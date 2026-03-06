@@ -103,34 +103,23 @@ python3 scripts/yt_search.py download "VIDEO_URL" --audio-only
 python3 scripts/yt_search.py info "VIDEO_URL"
 ```
 
-## 输出格式
+## 输出格式（Markdown 表格）
 
-```
-#    标题                                                    频道                 日期         时长       播放量
-------------------------------------------------------------------------------------------------------------------------
-1    The spelled-out intro to neural networks and back...   Andrej Karpathy      2022-10-05   3h55m16s   3.7M
-2    Let's build GPT: from scratch, in code, spelled out   Andrej Karpathy      2023-01-17   1h56m27s   2.1M
-```
+脚本已输出 Markdown 表格，AI **必须将每行的 `【译】___` 替换为实际中文翻译**后再呈现给用户。
 
-**🔴 强制双语显示规范**（必须执行，不得省略原标题）：
+最终呈现效果：
 
-脚本输出的原始标题行含 `【译】___` 占位符，AI **必须替换为实际翻译**，同时**保留原标题**。
+| # | 标题（原文 → 中文译文） | 日期 | 时长 | 播放量 |
+|---|------------------------|------|------|--------|
+| 1 | [Rick Beato: Greatest Guitarists...](url)<br>里克·贝阿托：史上最伟大的吉他手 | 2026-03-01 | 2h33m | 302.2K |
+| 2 | [State of AI in 2026: LLMs, Coding...](url)<br>2026年AI现状：大模型、编程、Scaling法则 | 2026-01-31 | 4h25m | 741.7K |
 
-最终呈现给用户的格式：
-```
-1  Rick Beato: Greatest Guitarists of All Time           ← 原标题（必须保留）
-   【译】里克·贝阿托：史上最伟大的吉他手  Lex Fridman  2026-03-01  2h34m  301.9K
-   https://youtube.com/watch?v=xxx
-
-2  State of AI in 2026: LLMs, Coding, Scaling Laws      ← 原标题（必须保留）
-   【译】2026年AI现状：大模型、编程、Scaling法则  Lex Fridman  2026-01-31  4h25m  741.7K
-   https://youtube.com/watch?v=yyy
-```
-
-**禁止行为**：
-- ❌ 只显示中文翻译，丢掉英文原标题
-- ❌ 询问用户是否需要翻译（直接翻译）
-- ❌ 跳过某些视频不翻译
+**🔴 强制规范**：
+- ✅ 保留原英文标题（作为可点击链接）
+- ✅ `【译】___` 替换为简洁中文译文（放在链接后同一单元格）
+- ✅ 所有视频逐行翻译，不得跳过
+- ❌ 不询问用户是否需要翻译（直接翻译）
+- ❌ 不把 `【译】___` 原样输出给用户
 
 ## 典型工作流
 

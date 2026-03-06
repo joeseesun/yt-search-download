@@ -190,19 +190,23 @@ def search_channel_videos(
 
 
 def print_results(results: list, show_desc: bool = False):
-    """Pretty print search results in bilingual format (original + translation hint)."""
+    """Print search results as a Markdown table with translation placeholder."""
     if not results:
         print("未找到结果")
         return
+
     print()
+    print("| # | 标题（原文 → 中文译文） | 日期 | 时长 | 播放量 |")
+    print("|---|------------------------|------|------|--------|")
     for i, v in enumerate(results, 1):
-        meta = f"{v['published']}  {v['duration']}  {fmt_views(v['views'])}"
-        print(f"{i}  {v['title']}")
-        print(f"   【译】___  {v['channel']}  {meta}")
-        print(f"   {v['url']}")
+        title = v["title"].replace("|", "\\|")
+        short = title if len(title) <= 55 else title[:52] + "..."
+        link = f"[{short}]({v['url']})"
+        print(f"| {i} | {link}<br>【译】___ | {v['published']} | {v['duration']} | {fmt_views(v['views'])} |")
         if show_desc and v["description"]:
-            print(f"   {v['description'][:120]}")
-        print()
+            desc = v["description"][:120].replace("|", "\\|").replace("\n", " ")
+            print(f"| | _{desc}_ | | | |")
+    print()
 
 
 def apply_duration_filter_sort(results: list, min_secs: int = 0, max_secs: int = 0, sort_by: str = "") -> list:
